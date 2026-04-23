@@ -1,0 +1,504 @@
+{% comment %}
+  ============================================================
+  PVC Film Custom Size Calculator v7 — EXACT PRICING
+  
+  COME FUNZIONA:
+  ┌─────────────────────────────────────────────────────────┐
+  │  Cliente inserisce 160×100 cm                           │
+  │  → Prezzo calcolato: 238.40 zł                          │
+  │  → Chiamata all'API Vercel → crea variante a 238.40 zł  │
+  │  → Aggiunge al carrello: qty=1 × 238.40 zł = 238.40 ✓  │
+  └─────────────────────────────────────────────────────────┘
+  
+  ⚠️ SETUP (una tantum — segui le istruzioni nel README):
+  1. Deploy del file api/pvc-price.js su Vercel (gratuito)
+  2. Configura 3 variabili d'ambiente su Vercel
+  3. Incolla l'URL Vercel nel campo "URL API Vercel" qui sotto
+  4. Prodotto Shopify: aggiungi opzione "Wymiar" con valore "0.00"
+  ============================================================
+{% endcomment %}
+
+{%- assign sid = section.id -%}
+
+<style>
+  .product__info-wrapper .price-item,
+  .product__info-wrapper .price__container,
+  .product-form__submit { display: none !important; }
+
+  #pvc-{{ sid }} [hidden] { display: none !important; }
+
+  /* Nascondi quantità nel carrello per questo prodotto */
+  [data-product-id="{{ product.id }}"] quantity-input,
+  [data-product-id="{{ product.id }}"] .quantity-wrapper,
+  [data-product-id="{{ product.id }}"] .quantity__wrapper,
+  [data-product-id="{{ product.id }}"] .cart-item__quantity-wrapper,
+  cart-items [data-product-id="{{ product.id }}"] .cart-item__quantity-wrapper,
+  #CartDrawer  [data-product-id="{{ product.id }}"] .cart-item__quantity-wrapper { display: none !important; }
+
+  #pvc-{{ sid }} {
+    --red:  #c0392b; --dark: #111111; --green: #16a34a; --gray: #f6f5f2; --r: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--dark); max-width: 520px;
+  }
+  #pvc-{{ sid }} .pvc-title {
+    font-size:.88rem; font-weight:900; text-transform:uppercase; letter-spacing:.04em;
+    text-align:center; line-height:1.45; margin:0 0 1.1rem;
+  }
+  #pvc-{{ sid }} .pvc-presets { display:flex; flex-wrap:wrap; gap:.4rem; margin-bottom:1.1rem; }
+  #pvc-{{ sid }} .pvc-preset {
+    background:#575757; color:#fff; border:2px solid transparent; border-radius:6px;
+    padding:.38rem .8rem; font-size:.78rem; font-weight:700; cursor:pointer;
+    transition:background .15s,border-color .15s,transform .1s;
+  }
+  #pvc-{{ sid }} .pvc-preset:hover  { background:#333; transform:translateY(-1px); }
+  #pvc-{{ sid }} .pvc-preset.active { background:var(--dark); border-color:rgba(255,255,255,.28); }
+
+  #pvc-{{ sid }} .pvc-preview {
+    background:#f4f7fb; border:1px solid #e2eaf4; border-radius:12px;
+    padding:.25rem .25rem 0; margin-bottom:1.1rem; overflow:hidden;
+  }
+  #pvc-{{ sid }} .pvc-preview svg { display:block; width:100%; }
+
+  #pvc-{{ sid }} .pvc-inputs { display:grid; grid-template-columns:1fr 1fr; gap:.85rem; margin-bottom:1rem; }
+  #pvc-{{ sid }} .pvc-step-label { display:block; font-size:.82rem; font-weight:700; color:#444; margin-bottom:.45rem; }
+  #pvc-{{ sid }} .pvc-stepper {
+    display:flex; border:1.5px solid #d1d5db; border-radius:10px;
+    overflow:hidden; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.07);
+  }
+  #pvc-{{ sid }} .pvc-step-btn {
+    width:44px; flex-shrink:0; background:none; border:none; font-size:1.3rem; font-weight:700;
+    cursor:pointer; color:#555; display:flex; align-items:center; justify-content:center;
+    padding:0; transition:background .12s; user-select:none; -webkit-user-select:none;
+  }
+  #pvc-{{ sid }} .pvc-step-btn:hover  { background:#f3f4f6; }
+  #pvc-{{ sid }} .pvc-step-btn:active { background:#e9eaec; }
+  #pvc-{{ sid }} .pvc-step-input {
+    flex:1; text-align:center; border:none; outline:none; font-size:1.05rem; font-weight:800;
+    color:var(--dark); background:transparent; padding:.65rem .25rem;
+    -moz-appearance:textfield; min-width:0;
+  }
+  #pvc-{{ sid }} .pvc-step-input::-webkit-inner-spin-button,
+  #pvc-{{ sid }} .pvc-step-input::-webkit-outer-spin-button { -webkit-appearance:none; }
+  #pvc-{{ sid }} .pvc-hint { display:block; font-size:.7rem; color:#aaa; margin-top:.3rem; }
+
+  #pvc-{{ sid }} .pvc-price-box { background:var(--gray); border-radius:10px; padding:.85rem 1.1rem; margin-bottom:.5rem; }
+  #pvc-{{ sid }} .pvc-price-row { display:flex; justify-content:space-between; align-items:center; font-size:1.2rem; font-weight:900; }
+  #pvc-{{ sid }} .pvc-price-meta { display:flex; justify-content:space-between; font-size:.75rem; color:#999; margin-top:.2rem; }
+
+  #pvc-{{ sid }} .pvc-error {
+    display:flex; align-items:flex-start; gap:.45rem;
+    background:#fef2f2; border:1px solid #fecaca; color:#b91c1c;
+    border-radius:var(--r); padding:.55rem .85rem; font-size:.82rem; font-weight:600; margin-bottom:.6rem;
+  }
+  #pvc-{{ sid }} .pvc-atc {
+    position:relative; width:100%; background:var(--dark); color:#fff; border:none;
+    border-radius:var(--r); padding:.9rem 1rem; font-size:.95rem; font-weight:800;
+    letter-spacing:.06em; text-transform:uppercase; cursor:pointer; overflow:hidden;
+    transition:background .3s; display:flex; align-items:center; justify-content:center; gap:.55rem;
+  }
+  #pvc-{{ sid }} .pvc-atc:hover:not(:disabled) { background:#2c2c2c; }
+  #pvc-{{ sid }} .pvc-atc:disabled { cursor:wait; }
+  #pvc-{{ sid }} .pvc-atc.pvc-success { background:var(--green); }
+
+  #pvc-{{ sid }} .pvc-spinner {
+    width:18px; height:18px; border:2.5px solid rgba(255,255,255,.3); border-top-color:#fff;
+    border-radius:50%; animation:pvcSpin{{ sid }} .7s linear infinite; flex-shrink:0;
+  }
+  @keyframes pvcSpin{{ sid }} { to { transform:rotate(360deg); } }
+  #pvc-{{ sid }} .pvc-check-path {
+    stroke:#fff; stroke-width:2.5; fill:none; stroke-dasharray:22; stroke-dashoffset:22;
+    stroke-linecap:round; stroke-linejoin:round; animation:pvcCheck{{ sid }} .4s ease forwards;
+  }
+  @keyframes pvcCheck{{ sid }} { to { stroke-dashoffset:0; } }
+
+  @media (max-width:400px) {
+    #pvc-{{ sid }} .pvc-inputs { gap:.6rem; }
+    #pvc-{{ sid }} .pvc-price-row { font-size:1rem; }
+  }
+</style>
+
+<div id="pvc-{{ sid }}">
+  {% if section.settings.header_text != blank %}
+    <p class="pvc-title">{{ section.settings.header_text }}</p>
+  {% endif %}
+
+  {% if section.blocks.size > 0 %}
+  <div class="pvc-presets">
+    {% for block in section.blocks %}{% if block.type == 'preset_size' %}
+      <button type="button" class="pvc-preset{% if forloop.first %} active{% endif %}"
+              data-w="{{ block.settings.width }}" data-h="{{ block.settings.height }}"
+              {{ block.shopify_attributes }}>
+        {{ block.settings.width }} × {{ block.settings.height }}
+      </button>
+    {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Anteprima forma SVG -->
+  <div class="pvc-preview">
+    <svg id="pvc-svg-{{ sid }}" viewBox="0 0 300 280">
+      <defs>
+        <linearGradient id="pvcGrad{{ sid }}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#ddeaf8"/><stop offset="100%" stop-color="#bedaf4"/>
+        </linearGradient>
+      </defs>
+      <rect id="pvc-shadow-{{ sid }}" rx="3" fill="#98bad8"
+            style="transition:x .22s,y .22s,width .22s,height .22s"/>
+      <rect id="pvc-main-{{ sid }}"   rx="3" fill="url(#pvcGrad{{ sid }})" stroke="#5da0d0" stroke-width="1.5"
+            style="transition:x .22s,y .22s,width .22s,height .22s"/>
+      <line id="pvc-hline-{{ sid }}" stroke="#4a90d9" stroke-width="1.5"/>
+      <polygon id="pvc-hup-{{ sid }}"   fill="#4a90d9"/>
+      <polygon id="pvc-hdown-{{ sid }}" fill="#4a90d9"/>
+      <rect    id="pvc-hpill-{{ sid }}" fill="#4a90d9" rx="12"/>
+      <text    id="pvc-hlbl-{{ sid }}"  fill="white" font-size="11" font-weight="700"
+               text-anchor="middle" dominant-baseline="central" font-family="-apple-system,sans-serif"/>
+      <line id="pvc-wline-{{ sid }}" stroke="#4a90d9" stroke-width="1.5"/>
+      <polygon id="pvc-wleft-{{ sid }}"  fill="#4a90d9"/>
+      <polygon id="pvc-wright-{{ sid }}" fill="#4a90d9"/>
+      <rect    id="pvc-wpill-{{ sid }}"  fill="#4a90d9" rx="12"/>
+      <text    id="pvc-wlbl-{{ sid }}"   fill="white" font-size="11" font-weight="700"
+               text-anchor="middle" dominant-baseline="central" font-family="-apple-system,sans-serif"/>
+    </svg>
+  </div>
+
+  <!-- Input con decimali -->
+  <div class="pvc-inputs">
+    <div>
+      <span class="pvc-step-label">{{ section.settings.width_label }} (cm)</span>
+      <div class="pvc-stepper">
+        <button type="button" class="pvc-step-btn" id="pvc-wdec-{{ sid }}">−</button>
+        <input class="pvc-step-input" type="text" inputmode="decimal"
+               id="pvc-w-{{ sid }}" value="{{ section.settings.default_width }}" placeholder="es. 150,5">
+        <button type="button" class="pvc-step-btn" id="pvc-winc-{{ sid }}">+</button>
+      </div>
+      <span class="pvc-hint">Max {{ section.settings.max_length }} cm · es: 150,5</span>
+    </div>
+    <div>
+      <span class="pvc-step-label">{{ section.settings.height_label }} (cm)</span>
+      <div class="pvc-stepper">
+        <button type="button" class="pvc-step-btn" id="pvc-hdec-{{ sid }}">−</button>
+        <input class="pvc-step-input" type="text" inputmode="decimal"
+               id="pvc-h-{{ sid }}" value="{{ section.settings.default_height }}" placeholder="es. 100,5">
+        <button type="button" class="pvc-step-btn" id="pvc-hinc-{{ sid }}">+</button>
+      </div>
+      <span class="pvc-hint">Max {{ section.settings.max_height_dim }} cm · es: 100,5</span>
+    </div>
+  </div>
+
+  {% if section.settings.show_notes %}
+  <div style="margin-bottom:.75rem">
+    <span class="pvc-step-label">{{ section.settings.notes_label }}</span>
+    <textarea id="pvc-notes-{{ sid }}" rows="3"
+      style="width:100%;padding:.65rem .75rem;border:1.5px solid #d1d5db;border-radius:8px;
+             font-size:.875rem;box-sizing:border-box;resize:vertical;font-family:inherit;"
+      placeholder="{{ section.settings.notes_placeholder }}"></textarea>
+  </div>
+  {% endif %}
+
+  <div class="pvc-price-box">
+    <div class="pvc-price-row">
+      <span>{{ section.settings.total_label }}</span>
+      <span>{{ cart.currency.symbol }}&nbsp;<span id="pvc-total-{{ sid }}">149.00</span></span>
+    </div>
+    <div class="pvc-price-meta">
+      <span>({{ cart.currency.symbol }} {{ section.settings.price_per_sqm }}/ m²)</span>
+      <span id="pvc-area-{{ sid }}">1.0000 m²</span>
+    </div>
+  </div>
+
+  <div class="pvc-error" id="pvc-err-{{ sid }}" hidden>
+    <span>⚠</span><span id="pvc-err-msg-{{ sid }}"></span>
+  </div>
+
+  <button class="pvc-atc" id="pvc-atc-{{ sid }}" type="button">
+    <span id="pvc-atc-inner-{{ sid }}">{{ section.settings.add_to_cart_text }}</span>
+  </button>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  const S=`{{ sid }}`, $=id=>document.getElementById(id);
+
+  /* ── Config ── */
+  const PRICE_SQM = {{ section.settings.price_per_sqm | times: 1.0 }};
+  const API_URL   = `{{ section.settings.vercel_api_url }}`.replace(/\/$/, '') + '/api/pvc-price';
+  const MIN_DIM   = {{ section.settings.min_dim }};
+  const MAX_LEN   = {{ section.settings.max_length }};
+  const MAX_H     = {{ section.settings.max_height_dim }};
+  const MAX_ROLL  = {{ section.settings.max_roll_width }};
+  const CUR       = `{{ cart.currency.symbol }}`;
+  const W_LBL     = `{{ section.settings.width_label  | escape }}`;
+  const H_LBL     = `{{ section.settings.height_label | escape }}`;
+  const ATC_TEXT  = `{{ section.settings.add_to_cart_text | escape }}`;
+  const OK_TEXT   = `{{ section.settings.success_text    | escape }}`;
+  const ERR_EMPTY = `{{ section.settings.error_empty     | escape }}`;
+  const ERR_ROLL  = `{{ section.settings.error_roll      | escape }}`;
+  const ERR_GEN   = `{{ section.settings.error_generic   | escape }}`;
+  const ERR_API   = `{{ section.settings.error_api       | escape }}`;
+
+  /* ── DOM ── */
+  const wInput  = $(`pvc-w-${S}`),     hInput  = $(`pvc-h-${S}`);
+  const totalEl = $(`pvc-total-${S}`), areaEl  = $(`pvc-area-${S}`);
+  const errBox  = $(`pvc-err-${S}`),   errMsg  = $(`pvc-err-msg-${S}`);
+  const atcBtn  = $(`pvc-atc-${S}`),   atcInner= $(`pvc-atc-inner-${S}`);
+  const presets = document.querySelectorAll(`#pvc-${S} .pvc-preset`);
+
+  /* ── SVG ── */
+  const sv={
+    shadow:$(`pvc-shadow-${S}`), main:$(`pvc-main-${S}`),
+    hline:$(`pvc-hline-${S}`),   hup:$(`pvc-hup-${S}`),     hdown:$(`pvc-hdown-${S}`),
+    hpill:$(`pvc-hpill-${S}`),   hlbl:$(`pvc-hlbl-${S}`),
+    wline:$(`pvc-wline-${S}`),   wleft:$(`pvc-wleft-${S}`), wright:$(`pvc-wright-${S}`),
+    wpill:$(`pvc-wpill-${S}`),   wlbl:$(`pvc-wlbl-${S}`)
+  };
+  function updateSVG(w,h){
+    const SW=300,SH=280,PL=72,PB=52,PT=18,PR=18,D=10,AG=22,AS=6;
+    const aW=SW-PL-PR,aH=SH-PT-PB,sc=Math.min(aW/Math.max(w,1),aH/Math.max(h,1));
+    const dW=Math.max(30,w*sc),dH=Math.max(30,h*sc),rx=PL+(aW-dW)/2,ry=PT+(aH-dH)/2;
+    const aLX=rx-AG,aBY=ry+dH+AG;
+    const R=(el,x,y,w,h)=>{el.setAttribute('x',x);el.setAttribute('y',y);el.setAttribute('width',w);el.setAttribute('height',h);};
+    const P=(el,s)=>el.setAttribute('points',s);
+    const L=(el,x1,y1,x2,y2)=>{el.setAttribute('x1',x1);el.setAttribute('y1',y1);el.setAttribute('x2',x2);el.setAttribute('y2',y2);};
+    R(sv.shadow,rx+D,ry+D,dW,dH); R(sv.main,rx,ry,dW,dH);
+    L(sv.hline,aLX,ry,aLX,ry+dH);
+    P(sv.hup,`${aLX},${ry} ${aLX-AS},${ry+AS*1.5} ${aLX+AS},${ry+AS*1.5}`);
+    P(sv.hdown,`${aLX},${ry+dH} ${aLX-AS},${ry+dH-AS*1.5} ${aLX+AS},${ry+dH-AS*1.5}`);
+    const hPX=Math.max(2,aLX-54),hPY=ry+dH/2-12;
+    R(sv.hpill,hPX,hPY,50,24); sv.hlbl.setAttribute('x',hPX+25); sv.hlbl.setAttribute('y',hPY+12);
+    sv.hlbl.textContent=(Math.round(h*10)/10)+'cm';
+    L(sv.wline,rx,aBY,rx+dW,aBY);
+    P(sv.wleft,`${rx},${aBY} ${rx+AS*1.5},${aBY-AS} ${rx+AS*1.5},${aBY+AS}`);
+    P(sv.wright,`${rx+dW},${aBY} ${rx+dW-AS*1.5},${aBY-AS} ${rx+dW-AS*1.5},${aBY+AS}`);
+    const wPX=rx+dW/2-26,wPY=Math.min(SH-27,aBY+6);
+    R(sv.wpill,wPX,wPY,52,24); sv.wlbl.setAttribute('x',wPX+26); sv.wlbl.setAttribute('y',wPY+12);
+    sv.wlbl.textContent=(Math.round(w*10)/10)+'cm';
+  }
+
+  /* ── Parsing: accetta virgola o punto ── */
+  const parseVal = el => parseFloat((el.value||'').replace(',','.'))||0;
+
+  /* ── Calcolo ── */
+  function compute(){
+    const w=parseVal(wInput), h=parseVal(hInput);
+    const sqm=w*h/10000;
+    const tot=Math.max(PRICE_SQM, parseFloat((sqm*PRICE_SQM).toFixed(2)));
+    totalEl.textContent=tot.toFixed(2);
+    areaEl.textContent=sqm>0?sqm.toFixed(4)+' m²':'';
+    updateSVG(w||10,h||10);
+    return {w,h,sqm,tot};
+  }
+
+  /* ── Validazione ── */
+  function validate(){
+    const w=parseVal(wInput), h=parseVal(hInput);
+    if(!w||!h)                  return ERR_EMPTY;
+    if(w>MAX_LEN||h>MAX_LEN)   return `${W_LBL}/${H_LBL}: max ${MAX_LEN} cm`;
+    if(w>MAX_ROLL&&h>MAX_ROLL) return ERR_ROLL;
+    return null;
+  }
+
+  const showErr=msg=>{errMsg.textContent=msg; errBox.hidden=false;};
+  const hideErr=()=>{errBox.hidden=true;};
+
+  /* ── Stepper decimale ── */
+  function makeStepper(inp,dec,inc,min,max){
+    let iv=null;
+    const getV=()=>parseFloat((inp.value||'').replace(',','.'))||0;
+    const setV=v=>{
+      const c=Math.min(max,Math.max(min,Math.round(v*10)/10));
+      inp.value=String(c).replace('.',',');
+      inp.dispatchEvent(new Event('input'));
+    };
+    const nudge=d=>setV(getV()+d);
+    const go=d=>{nudge(d); iv=setInterval(()=>nudge(d),110);};
+    const stop=()=>clearInterval(iv);
+    dec.addEventListener('mousedown',()=>go(-1));
+    inc.addEventListener('mousedown',()=>go(+1));
+    dec.addEventListener('touchstart',e=>{e.preventDefault();go(-1);},{passive:false});
+    inc.addEventListener('touchstart',e=>{e.preventDefault();go(+1);},{passive:false});
+    ['mouseup','mouseleave','touchend','touchcancel'].forEach(ev=>{
+      dec.addEventListener(ev,stop); inc.addEventListener(ev,stop);
+    });
+    inp.addEventListener('blur',()=>{
+      const v=getV();
+      if(v>0) inp.value=String(Math.min(max,Math.max(min,v))).replace('.',',');
+    });
+  }
+  makeStepper(wInput,$(`pvc-wdec-${S}`),$(`pvc-winc-${S}`),MIN_DIM,MAX_LEN);
+  makeStepper(hInput,$(`pvc-hdec-${S}`),$(`pvc-hinc-${S}`),MIN_DIM,MAX_H);
+
+  /* ── Presets ── */
+  presets.forEach(btn=>{
+    btn.addEventListener('click',function(){
+      presets.forEach(b=>b.classList.remove('active')); this.classList.add('active');
+      wInput.value=String(this.dataset.w).replace('.',',');
+      hInput.value=String(this.dataset.h).replace('.',',');
+      compute(); hideErr();
+    });
+  });
+  wInput.addEventListener('input',()=>{presets.forEach(b=>b.classList.remove('active')); compute(); hideErr();});
+  hInput.addEventListener('input',()=>{presets.forEach(b=>b.classList.remove('active')); compute(); hideErr();});
+
+  /* ── Stati pulsante ── */
+  const setLoading=txt=>{atcBtn.disabled=true; atcBtn.classList.remove('pvc-success');
+    atcInner.innerHTML=`<span class="pvc-spinner"></span><span>${txt||'Dodawanie...'}</span>`;};
+  const setSuccess=()=>{atcBtn.classList.add('pvc-success');
+    atcInner.innerHTML=`<svg width="20" height="20" viewBox="0 0 20 20" fill="none" style="flex-shrink:0"><polyline class="pvc-check-path" points="3,10 8,15 17,5"/></svg><span>${OK_TEXT}</span>`;};
+  const setIdle=()=>{atcBtn.disabled=false; atcBtn.classList.remove('pvc-success'); atcInner.innerHTML=ATC_TEXT;};
+
+  /* ── Apri carrello Horizon ── */
+  function openCart(){
+    fetch('/?sections=cart-icon-bubble,cart-drawer').then(r=>r.json()).then(data=>{
+      ['cart-icon-bubble','cart-drawer'].forEach(k=>{
+        if(!data[k]) return;
+        const doc=new DOMParser().parseFromString(data[k],'text/html');
+        const id=k==='cart-icon-bubble'?'cart-icon-bubble':'CartDrawer';
+        const n=doc.getElementById(id),c=document.getElementById(id);
+        if(n&&c) c.innerHTML=n.innerHTML;
+      });
+    }).catch(()=>{}).finally(()=>{
+      const d=document.querySelector('cart-drawer');
+      if(d){if(typeof d.open==='function'){d.open();return;} if(typeof d.show==='function'){d.show();return;}}
+      for(const sel of ['[aria-controls="CartDrawer"]','[data-cart-toggle]','#cart-icon-bubble']){
+        const el=document.querySelector(sel); if(el){el.click();return;}
+      }
+      document.dispatchEvent(new CustomEvent('cart:open',{bubbles:true}));
+    });
+  }
+
+  /* ── CORE: Ottieni variante con prezzo esatto → aggiungi al carrello ── */
+  let _t=null;
+
+  atcBtn.addEventListener('click', async function(){
+    const err=validate(); if(err){showErr(err);return;}
+    const {w,h,sqm,tot}=compute();
+    hideErr();
+
+    /* Step 1: Ottieni (o crea) la variante con il prezzo esatto */
+    setLoading('Calcolo prezzo...');
+
+    let variantId;
+    try {
+      const apiRes = await fetch(API_URL, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ price: tot.toFixed(2) })
+      });
+      const apiData = await apiRes.json();
+      if(!apiRes.ok) {
+        const detail = apiData.hint || apiData.detail || apiData.error || `HTTP ${apiRes.status}`;
+        throw new Error(detail);
+      }
+      if(!apiData.variantId) throw new Error('variantId mancante nella risposta API');
+      variantId = apiData.variantId;
+    } catch(e) {
+      console.error('[PVC API]', e.message);
+      showErr(ERR_API + ' (' + e.message + ')');
+      setIdle();
+      return;
+    }
+
+    /* Step 2: Aggiungi al carrello qty=1 con la variante al prezzo esatto */
+    setLoading('Dodawanie...');
+
+    const props = {};
+    props[W_LBL] = w + ' cm';
+    props[H_LBL] = h + ' cm';
+    /* _Prezzo: nascosto in molti temi, ma visibile in admin */
+    props['_Prezzo'] = CUR + tot.toFixed(2);
+
+    {% if section.settings.show_notes %}
+    const n=$(`pvc-notes-${S}`);
+    if(n&&n.value.trim()) props[`{{ section.settings.notes_label|escape }}`]=n.value.trim();
+    {% endif %}
+
+    try {
+      const cartRes = await fetch('/cart/add.js', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ id: variantId, quantity: 1, properties: props })
+      });
+      const cartData = await cartRes.json();
+      if(!cartRes.ok || cartData.status >= 400){
+        throw new Error(cartData.description || cartData.message || ERR_GEN);
+      }
+      clearTimeout(_t);
+      openCart();
+      setSuccess();
+      _t = setTimeout(setIdle, 2500);
+    } catch(e) {
+      console.error('[PVC Cart]', e);
+      showErr(e.message || ERR_GEN);
+      setIdle();
+    }
+  });
+
+  compute();
+})();
+</script>
+
+{% schema %}
+{
+  "name": "PVC Calcolatore Misure",
+  "tag": "section",
+  "class": "section",
+  "settings": [
+    { "type": "header", "content": "🌐 API Vercel" },
+    {
+      "type": "url", "id": "vercel_api_url",
+      "label": "URL della tua app Vercel",
+      "info": "Es: https://pvc-price.vercel.app — Segui il README per il deploy"
+    },
+    { "type": "header", "content": "💰 Prezzo" },
+    {
+      "type": "number", "id": "price_per_sqm", "label": "Prezzo per m²", "default": 149,
+      "info": "Il prezzo variante base su Shopify non conta — il prezzo viene impostato dinamicamente dall'API"
+    },
+    { "type": "header", "content": "📐 Dimensioni" },
+    { "type": "text",   "id": "width_label",    "label": "Etichetta larghezza", "default": "Szerokość" },
+    { "type": "text",   "id": "height_label",   "label": "Etichetta altezza",   "default": "Wysokość"  },
+    { "type": "number", "id": "min_dim",         "label": "Minimo (cm)",         "default": 10   },
+    { "type": "number", "id": "max_length",      "label": "Max lunghezza (cm)",  "default": 1500 },
+    { "type": "number", "id": "max_height_dim",  "label": "Max altezza (cm)",    "default": 140  },
+    { "type": "number", "id": "max_roll_width",  "label": "Larghezza rotolo (cm)","default": 140 },
+    { "type": "number", "id": "default_width",   "label": "Larghezza default",   "default": 140  },
+    { "type": "number", "id": "default_height",  "label": "Altezza default",     "default": 100  },
+    { "type": "header", "content": "📝 Testi" },
+    { "type": "text", "id": "header_text",      "label": "Titolo calcolatore",       "default": "WYBIERZ ROZMIAR LUB DOSTOSUJ, WPISUJĄC WYMIARY PONIŻEJ" },
+    { "type": "text", "id": "total_label",      "label": "Etichetta totale",         "default": "Łącznie" },
+    { "type": "text", "id": "add_to_cart_text", "label": "Testo pulsante aggiungi",  "default": "Dodaj do koszyka" },
+    { "type": "text", "id": "success_text",     "label": "Testo pulsante successo",  "default": "Dodano do koszyka!" },
+    { "type": "header", "content": "⚠️ Errori" },
+    { "type": "text", "id": "error_empty",   "label": "Errore campi vuoti",          "default": "Proszę podać szerokość i wysokość" },
+    { "type": "text", "id": "error_roll",    "label": "Errore larghezza rotolo",     "default": "Min. jeden wymiar musi być ≤ 140 cm (szerokość rolki)" },
+    { "type": "text", "id": "error_generic", "label": "Errore generico",             "default": "Wystąpił błąd. Spróbuj ponownie." },
+    { "type": "text", "id": "error_api",     "label": "Errore API prezzo",           "default": "Errore nel calcolo del prezzo. Riprova tra qualche secondo." },
+    { "type": "header", "content": "📌 Note" },
+    { "type": "checkbox", "id": "show_notes",        "label": "Mostra campo note",   "default": false },
+    { "type": "text",     "id": "notes_label",       "label": "Etichetta note",      "default": "Uwagi specjalne" },
+    { "type": "text",     "id": "notes_placeholder", "label": "Placeholder note",    "default": "Dodaj uwagi specjalne..." },
+    { "type": "header", "content": "🎨 Stile" },
+    { "type": "color_scheme", "id": "color_scheme",  "label": "Schema colori",       "default": "scheme-1" }
+  ],
+  "blocks": [
+    {
+      "type": "preset_size", "name": "Misura preimpostata",
+      "settings": [
+        { "type": "number", "id": "width",  "label": "Larghezza (cm)", "default": 140 },
+        { "type": "number", "id": "height", "label": "Altezza (cm)",   "default": 100 }
+      ]
+    }
+  ],
+  "presets": [{
+    "name": "PVC Calcolatore Misure",
+    "blocks": [
+      { "type": "preset_size", "settings": { "width": 140, "height": 100 } },
+      { "type": "preset_size", "settings": { "width": 150, "height": 100 } },
+      { "type": "preset_size", "settings": { "width": 160, "height": 100 } },
+      { "type": "preset_size", "settings": { "width": 180, "height": 100 } },
+      { "type": "preset_size", "settings": { "width": 200, "height": 100 } }
+    ]
+  }]
+}
+{% endschema %}
