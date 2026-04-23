@@ -1,0 +1,9 @@
+{
+  "name": "pvc-price-api",
+  "version": "1.0.0",
+  "description": "Shopify variant price API for PVC calculator",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
